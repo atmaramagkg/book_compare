@@ -4,8 +4,8 @@ extension SegmentKindX on SegmentKind {
   String get label => switch (this) {
         SegmentKind.same => 'unchanged',
         SegmentKind.changed => 'reworded',
-        SegmentKind.deleted => 'in the 1972 text only',
-        SegmentKind.added => 'in the revised text only',
+        SegmentKind.deleted => 'present only in the original edition',
+        SegmentKind.added => 'present only in the revised edition',
       };
 }
 
@@ -54,13 +54,13 @@ class DiffHunk {
   String get plainRevised => revised.map((s) => s.text).join();
 }
 
-class VerseDiff {
+class SectionDiff {
   final String reference;
   final List<DiffHunk> hunks;
 
-  const VerseDiff({required this.reference, required this.hunks});
+  const SectionDiff({required this.reference, required this.hunks});
 
-  factory VerseDiff.fromJson(Map<String, dynamic> json) => VerseDiff(
+  factory SectionDiff.fromJson(Map<String, dynamic> json) => SectionDiff(
         reference: json['reference'] as String,
         hunks: (json['hunks'] as List<dynamic>)
             .map((e) => DiffHunk.fromJson(e as Map<String, dynamic>))
@@ -70,51 +70,105 @@ class VerseDiff {
 
 class ChapterDiff {
   final int chapter;
+  final String numberLabel;
   final String title;
-  final int verseCount;
+  final int sectionCount;
   final int hunkCount;
-  final List<VerseDiff> verses;
+  final List<SectionDiff> sections;
 
   const ChapterDiff({
     required this.chapter,
+    required this.numberLabel,
     required this.title,
-    required this.verseCount,
+    required this.sectionCount,
     required this.hunkCount,
-    required this.verses,
+    required this.sections,
   });
 
   factory ChapterDiff.fromJson(Map<String, dynamic> json) => ChapterDiff(
         chapter: json['chapter'] as int,
+        numberLabel: json['numberLabel'] as String,
         title: json['title'] as String,
-        verseCount: json['verseCount'] as int,
+        sectionCount: json['sectionCount'] as int,
         hunkCount: json['hunkCount'] as int,
-        verses: (json['verses'] as List<dynamic>)
-            .map((e) => VerseDiff.fromJson(e as Map<String, dynamic>))
+        sections: (json['sections'] as List<dynamic>)
+            .map((e) => SectionDiff.fromJson(e as Map<String, dynamic>))
             .toList(),
       );
 
-  List<DiffHunk> get allHunks => verses.expand((v) => v.hunks).toList();
+  List<DiffHunk> get allHunks => sections.expand((s) => s.hunks).toList();
+}
+
+class BookSummary {
+  final String id;
+  final String title;
+  final String shortTitle;
+  final String asset;
+  final String originalEdition;
+  final String revisedEdition;
+  final int chapterCount;
+  final int hunkCount;
+
+  const BookSummary({
+    required this.id,
+    required this.title,
+    required this.shortTitle,
+    required this.asset,
+    required this.originalEdition,
+    required this.revisedEdition,
+    required this.chapterCount,
+    required this.hunkCount,
+  });
+
+  factory BookSummary.fromJson(Map<String, dynamic> json) => BookSummary(
+        id: json['id'] as String,
+        title: json['title'] as String,
+        shortTitle: json['shortTitle'] as String,
+        asset: json['asset'] as String,
+        originalEdition: json['originalEdition'] as String,
+        revisedEdition: json['revisedEdition'] as String,
+        chapterCount: json['chapterCount'] as int,
+        hunkCount: json['hunkCount'] as int,
+      );
 }
 
 class DiffDataset {
+  final String id;
   final String book;
+  final String shortTitle;
   final String originalEdition;
   final String revisedEdition;
+  final String originalLabel;
+  final String revisedLabel;
+  final String referencePrefix;
+  final String unitLabel;
+  final String unitLabelPlural;
   final String sourceName;
   final String sourceUrl;
   final String sourceNote;
   final String generatedAt;
+  final int chapterCount;
+  final int sectionCount;
   final int hunkCount;
   final List<ChapterDiff> chapters;
 
   const DiffDataset({
+    required this.id,
     required this.book,
+    required this.shortTitle,
     required this.originalEdition,
     required this.revisedEdition,
+    required this.originalLabel,
+    required this.revisedLabel,
+    required this.referencePrefix,
+    required this.unitLabel,
+    required this.unitLabelPlural,
     required this.sourceName,
     required this.sourceUrl,
     required this.sourceNote,
     required this.generatedAt,
+    required this.chapterCount,
+    required this.sectionCount,
     required this.hunkCount,
     required this.chapters,
   });
@@ -122,17 +176,31 @@ class DiffDataset {
   factory DiffDataset.fromJson(Map<String, dynamic> json) {
     final source = json['source'] as Map<String, dynamic>;
     return DiffDataset(
+      id: json['id'] as String,
       book: json['book'] as String,
+      shortTitle: json['shortTitle'] as String,
       originalEdition: json['originalEdition'] as String,
       revisedEdition: json['revisedEdition'] as String,
+      originalLabel: json['originalLabel'] as String,
+      revisedLabel: json['revisedLabel'] as String,
+      referencePrefix: json['referencePrefix'] as String,
+      unitLabel: json['unitLabel'] as String,
+      unitLabelPlural: json['unitLabelPlural'] as String,
       sourceName: source['name'] as String,
       sourceUrl: source['url'] as String,
       sourceNote: source['note'] as String,
       generatedAt: json['generatedAt'] as String,
+      chapterCount: json['chapterCount'] as int,
+      sectionCount: json['sectionCount'] as int,
       hunkCount: json['hunkCount'] as int,
       chapters: (json['chapters'] as List<dynamic>)
           .map((e) => ChapterDiff.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
   }
+
+  String displayReference(String reference) =>
+      referencePrefix.isEmpty ? reference : '$referencePrefix $reference';
+
+  String countLabel(int count) => count == 1 ? unitLabel : unitLabelPlural;
 }

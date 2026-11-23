@@ -1,17 +1,30 @@
 import 'package:flutter/material.dart';
 
 class ChangeLegend extends StatelessWidget {
-  const ChangeLegend({super.key});
+  final String originalLabel;
+  final String revisedLabel;
+
+  const ChangeLegend({
+    super.key,
+    this.originalLabel = 'original only',
+    this.revisedLabel = 'revised only',
+  });
 
   @override
   Widget build(BuildContext context) {
     return Wrap(
       spacing: 12,
       runSpacing: 4,
-      children: const [
-        _LegendItem(color: Color(0x40F9A825), label: 'reworded'),
-        _LegendItem(color: Color(0x26C62828), label: '1972 only'),
-        _LegendItem(color: Color(0x262E7D32), label: 'revised only'),
+      children: [
+        const _LegendItem(color: Color(0x40F9A825), label: 'reworded'),
+        _LegendItem(
+          color: const Color(0x26C62828),
+          label: '${originalLabel.toLowerCase().split(' ').first} only',
+        ),
+        _LegendItem(
+          color: const Color(0x262E7D32),
+          label: '${revisedLabel.toLowerCase().split(' ').first} only',
+        ),
       ],
     );
   }

@@ -6,6 +6,8 @@ import 'highlighted_text.dart';
 class HunkCard extends StatelessWidget {
   final String reference;
   final DiffHunk hunk;
+  final String originalLabel;
+  final String revisedLabel;
   final double fontSize;
   final bool focused;
 
@@ -13,6 +15,8 @@ class HunkCard extends StatelessWidget {
     super.key,
     required this.reference,
     required this.hunk,
+    required this.originalLabel,
+    required this.revisedLabel,
     required this.fontSize,
     required this.focused,
   });
@@ -33,11 +37,13 @@ class HunkCard extends StatelessWidget {
               children: [
                 Icon(Icons.compare_arrows, size: 16, color: colorScheme.primary),
                 const SizedBox(width: 6),
-                Text(
-                  'BG $reference  ·  ${hunk.section}',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: colorScheme.primary,
-                    fontWeight: FontWeight.w600,
+                Expanded(
+                  child: Text(
+                    '$reference  ·  ${hunk.section}',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
@@ -48,16 +54,20 @@ class HunkCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _Pane(
-                    label: '1972 ORIGINAL',
+                    label: originalLabel,
                     accent: const Color(0xFF8D6E63),
                     segments: hunk.original,
                     fontSize: fontSize,
                   ),
                 ),
-                Container(width: 1, color: theme.dividerColor, margin: const EdgeInsets.symmetric(horizontal: 10)),
+                Container(
+                  width: 1,
+                  color: theme.dividerColor,
+                  margin: const EdgeInsets.symmetric(horizontal: 10),
+                ),
                 Expanded(
                   child: _Pane(
-                    label: 'REVISED EDITION',
+                    label: revisedLabel,
                     accent: colorScheme.primary,
                     segments: hunk.revised,
                     fontSize: fontSize,
@@ -101,7 +111,10 @@ class _Pane extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         if (segments.isEmpty)
-          Text('(no corresponding text)', style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic))
+          Text(
+            '(no corresponding text)',
+            style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
+          )
         else
           HighlightedText(segments: segments, fontSize: fontSize),
       ],

@@ -9,9 +9,15 @@ typedef IndexedHunk = ({String reference, DiffHunk hunk});
 
 class ComparisonScreen extends StatefulWidget {
   final ChapterDiff chapter;
-  final String? initialVerse;
+  final DiffDataset dataset;
+  final String? initialReference;
 
-  const ComparisonScreen({super.key, required this.chapter, this.initialVerse});
+  const ComparisonScreen({
+    super.key,
+    required this.chapter,
+    required this.dataset,
+    this.initialReference,
+  });
 
   @override
   State<ComparisonScreen> createState() => _ComparisonScreenState();
@@ -20,7 +26,7 @@ class ComparisonScreen extends StatefulWidget {
 class _ComparisonScreenState extends State<ComparisonScreen> {
   late final List<IndexedHunk> _all;
   late List<IndexedHunk> _visible;
-  String? _selectedVerse;
+  String? _selectedReference;
   double _fontSize = 14;
   int _focusedIndex = 0;
   final Map<String, GlobalKey> _keys = {};
@@ -30,21 +36,25 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
   @override
   void initState() {
     super.initState();
-    _all = widget.chapter.verses
-        .expand((verse) => verse.hunks.map((hunk) => (reference: verse.reference, hunk: hunk)))
+    _all = widget.chapter.sections
+        .expand(
+          (section) => section.hunks.map(
+            (hunk) => (reference: section.reference, hunk: hunk),
+          ),
+        )
         .toList();
-    _selectedVerse = widget.initialVerse;
-    _visible = _selectedVerse == null
+    _selectedReference = widget.initialReference;
+    _visible = _selectedReference == null
         ? _all
-        : _all.where((entry) => entry.reference == _selectedVerse).toList();
+        : _all.where((entry) => entry.reference == _selectedReference).toList();
   }
 
-  void _filter(String? verse) {
+  void _filter(String? reference) {
     setState(() {
-      _selectedVerse = verse;
-      _visible = verse == null
+      _selectedReference = reference;
+      _visible = reference == null
           ? _all
-          : _all.where((entry) => entry.reference == verse).toList();
+          : _all.where((entry) => entry.reference == reference).toList();
       _focusedIndex = 0;
     });
   }
@@ -73,11 +83,12 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final verses = widget.chapter.verses;
+    final dataset = widget.dataset;
+    final sections = widget.chapter.sections;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Chapter ${widget.chapter.chapter} · side by side'),
+        title: Text('${widget.chapter.numberLabel} · side by side'),
         actions: [
           IconButton(
             icon: const Icon(Icons.text_fields),
@@ -88,7 +99,9 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
             icon: const Icon(Icons.info_outline),
             tooltip: 'About',
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AboutScreen()),
+              MaterialPageRoute(
+                builder: (_) => AboutScreen(bookId: dataset.id),
+              ),
             ),
           ),
         ],
@@ -99,22 +112,30 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
             color: theme.colorScheme.surface,
-            child: const ChangeLegend(),
+            child: ChangeLegend(
+              originalLabel: dataset.originalLabel,
+              revisedLabel: dataset.revisedLabel,
+            ),
           ),
           SizedBox(
             height: 46,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              itemCount: verses.length + 1,
+              itemCount: sections.length + 1,
               separatorBuilder: (_, _) => const SizedBox(width: 6),
               itemBuilder: (context, index) {
-                final String? verse = index == 0 ? null : verses[index - 1].reference;
-                final selected = _selectedVerse == verse;
+                final String? reference =
+                    index == 0 ? null : sections[index - 1].reference;
+                final selected = _selectedReference == reference;
                 return FilterChip(
-                  label: Text(verse == null ? 'All' : 'BG $verse'),
+                  label: Text(
+                    reference == null
+                        ? 'All'
+                        : dataset.displayReference(reference),
+                  ),
                   selected: selected,
-                  onSelected: (_) => _filter(verse),
+                  onSelected: (_) => _filter(reference),
                 );
               },
             ),
@@ -128,11 +149,16 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
                     itemCount: _visible.length,
                     itemBuilder: (context, index) {
                       final entry = _visible[index];
-                      final key = _keys.putIfAbsent(entry.hunk.id, () => GlobalKey());
+                      final key = _keys.putIfAbsent(
+                        entry.hunk.id,
+                        () => GlobalKey(),
+                      );
                       return HunkCard(
                         key: key,
-                        reference: entry.reference,
+                        reference: dataset.displayReference(entry.reference),
                         hunk: entry.hunk,
+                        originalLabel: dataset.originalLabel,
+                        revisedLabel: dataset.revisedLabel,
                         fontSize: _fontSize,
                         focused: index == _focusedIndex,
                       );

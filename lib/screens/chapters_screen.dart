@@ -3,28 +3,31 @@ import 'package:flutter/material.dart';
 import '../models/diff_models.dart';
 import '../services/diff_repository.dart';
 import 'about_screen.dart';
-import 'verse_list_screen.dart';
+import 'section_list_screen.dart';
 
 class ChaptersScreen extends StatelessWidget {
-  const ChaptersScreen({super.key});
+  final String bookId;
+  final BookSummary? summary;
+
+  const ChaptersScreen({super.key, required this.bookId, this.summary});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Book Compare'),
+        title: Text(summary?.shortTitle ?? 'Chapters'),
         actions: [
           IconButton(
             icon: const Icon(Icons.info_outline),
-            tooltip: 'About this app',
+            tooltip: 'About this book',
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AboutScreen()),
+              MaterialPageRoute(builder: (_) => AboutScreen(bookId: bookId)),
             ),
           ),
         ],
       ),
       body: FutureBuilder<DiffDataset>(
-        future: DiffRepository.instance.load(),
+        future: DiffRepository.instance.loadBook(bookId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -77,13 +80,16 @@ class _ChaptersList extends StatelessWidget {
                 leading: CircleAvatar(
                   backgroundColor: theme.colorScheme.primary,
                   foregroundColor: theme.colorScheme.onPrimary,
-                  child: Text('${chapter.chapter}'),
+                  child: Text(chapter.numberLabel),
                 ),
                 title: Text(chapter.title),
-                subtitle: Text('${chapter.hunkCount} changes · ${chapter.verseCount} verses'),
+                subtitle: Text(
+                  '${chapter.hunkCount} changes · '
+                  '${chapter.sectionCount} ${dataset.countLabel(chapter.sectionCount)}',
+                ),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => VerseListScreen(chapter: chapter),
+                    builder: (_) => SectionListScreen(chapter: chapter, dataset: dataset),
                   ),
                 ),
               );

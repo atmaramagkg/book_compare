@@ -3,17 +3,18 @@ import 'package:flutter/material.dart';
 import '../models/diff_models.dart';
 import 'comparison_screen.dart';
 
-class VerseListScreen extends StatelessWidget {
+class SectionListScreen extends StatelessWidget {
   final ChapterDiff chapter;
+  final DiffDataset dataset;
 
-  const VerseListScreen({super.key, required this.chapter});
+  const SectionListScreen({super.key, required this.chapter, required this.dataset});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text('Chapter ${chapter.chapter}'),
+        title: Text('${dataset.shortTitle} · ${chapter.numberLabel}'),
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -28,37 +29,48 @@ class VerseListScreen extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              '${chapter.hunkCount} changes across ${chapter.verseCount} verses',
+              '${chapter.hunkCount} changes across '
+              '${chapter.sectionCount} ${dataset.countLabel(chapter.sectionCount)}',
               style: theme.textTheme.bodySmall,
             ),
           ),
           const SizedBox(height: 8),
           Expanded(
             child: ListView.separated(
-              itemCount: chapter.verses.length + 1,
+              itemCount: chapter.sections.length + 1,
               separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, index) {
                 if (index == 0) {
                   return ListTile(
                     leading: CircleAvatar(
                       backgroundColor: theme.colorScheme.primaryContainer,
-                      child: Icon(Icons.select_all, color: theme.colorScheme.onPrimaryContainer),
+                      child: Icon(
+                        Icons.select_all,
+                        color: theme.colorScheme.onPrimaryContainer,
+                      ),
                     ),
-                    title: const Text('All changes in this chapter'),
+                    title: Text('All changes in this ${dataset.unitLabel}'),
                     subtitle: Text('${chapter.hunkCount} passages'),
                     onTap: () => _open(context, null),
                   );
                 }
-                final verse = chapter.verses[index - 1];
+                final section = chapter.sections[index - 1];
+                final reference = dataset.displayReference(section.reference);
                 return ListTile(
                   leading: CircleAvatar(
                     backgroundColor: theme.colorScheme.primaryContainer,
                     foregroundColor: theme.colorScheme.onPrimaryContainer,
-                    child: Text(verse.reference.split('.').last),
+                    child: Text(
+                      section.reference.split(RegExp(r'[.\s]')).last,
+                      style: const TextStyle(fontSize: 12),
+                    ),
                   ),
-                  title: Text('BG ${verse.reference}'),
-                  subtitle: Text('${verse.hunks.length} ${verse.hunks.length == 1 ? 'change' : 'changes'}'),
-                  onTap: () => _open(context, verse.reference),
+                  title: Text(reference),
+                  subtitle: Text(
+                    '${section.hunks.length} '
+                    '${section.hunks.length == 1 ? 'change' : 'changes'}',
+                  ),
+                  onTap: () => _open(context, section.reference),
                 );
               },
             ),
@@ -68,10 +80,14 @@ class VerseListScreen extends StatelessWidget {
     );
   }
 
-  void _open(BuildContext context, String? verse) {
+  void _open(BuildContext context, String? reference) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ComparisonScreen(chapter: chapter, initialVerse: verse),
+        builder: (_) => ComparisonScreen(
+          chapter: chapter,
+          dataset: dataset,
+          initialReference: reference,
+        ),
       ),
     );
   }

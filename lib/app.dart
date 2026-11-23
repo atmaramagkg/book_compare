@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/chapters_screen.dart';
+import 'screens/books_screen.dart';
 
 class BookCompareApp extends StatelessWidget {
   const BookCompareApp({super.key});
@@ -30,7 +30,7 @@ class BookCompareApp extends StatelessWidget {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
-      home: const ChaptersScreen(),
+      home: const BooksScreen(),
     );
   }
 }

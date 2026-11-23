@@ -5,9 +5,16 @@ import 'package:book_compare/services/diff_repository.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('loads bundled diff data', () async {
-    final data = await DiffRepository.instance.load();
-    expect(data.chapters.length, 18);
-    expect(data.hunkCount, greaterThan(2000));
+  test('loads every bundled book', () async {
+    final books = await DiffRepository.instance.loadBooks();
+    expect(books.length, 3);
+    expect(books.map((b) => b.id), containsAll(['bg', 'kb', 'cc']));
+
+    for (final book in books) {
+      final data = await DiffRepository.instance.loadBook(book.id);
+      expect(data.chapters.length, book.chapterCount);
+      expect(data.hunkCount, book.hunkCount);
+      expect(data.hunkCount, greaterThan(0));
+    }
   });
 }
