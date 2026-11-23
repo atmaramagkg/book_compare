@@ -19,10 +19,16 @@ android {
         applicationId = "com.lilasmarana.book_compare"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        minSdk = 29 // Android 10+
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Keep the release APK arm64-only. This avoids bundling 32-bit ARM and
+        // x86 native libraries for devices this build does not target.
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {

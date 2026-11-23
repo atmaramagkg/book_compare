@@ -84,17 +84,21 @@ flutter analyze
 flutter test
 ```
 
-Run on a connected Android device or emulator:
+Run on a connected arm64 Android device:
 
 ```bash
-flutter run
+flutter run --target-platform android-arm64
 ```
 
 Build a release APK:
 
 ```bash
-flutter build apk --release
+flutter build apk --release --target-platform android-arm64
 ```
+
+This build is arm64-only and requires Android 10 (API 29) or newer. The Gradle
+configuration also filters native libraries to `arm64-v8a`, so a plain
+`flutter build apk --release` produces the same single-ABI APK.
 
 The APK is written to `build/app/outputs/flutter-apk/app-release.apk`.
 
