@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'screens/books_screen.dart';
 
-class BookCompareApp extends StatelessWidget {
-  const BookCompareApp({super.key});
+class BookEditApp extends StatelessWidget {
+  const BookEditApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -13,7 +13,7 @@ class BookCompareApp extends StatelessWidget {
     );
 
     return MaterialApp(
-      title: 'Book Compare',
+      title: 'Book edit',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: colorScheme,

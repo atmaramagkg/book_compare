@@ -1,26 +1,39 @@
 #!/usr/bin/env python3
-"""Build the app's bundled diff datasets from published ExamDiff reports.
+"""Build the app's bundled diff datasets from published source texts.
 
-Supported books are configured in BOOKS below. Each report is an HTML table
-with two line-aligned panes. Inline spans are mapped to highlight kinds and
-only changed regions (plus light context) are written to compact JSON files.
+Most books are built from ExamDiff reports: each report is an HTML table with
+two line-aligned panes, whose inline spans map to highlight kinds. Srimad
+Bhagavatam is built directly from verse text: the original side comes from
+vedabase.cc's clean Markdown files and the revised side from a supplied
+Bhaktivedanta VedaBase DOCX. Only changed passages are written to compact JSON
+files.
 
 Usage:
     python tools/build_diff_data.py
     python tools/build_diff_data.py --books bg kb
-    python tools/build_diff_data.py --offline   # reuse cached HTML only
+    python tools/build_diff_data.py --books sb
+    python tools/build_diff_data.py --books sb --sb-docx /path/to/sb.docx
+    python tools/build_diff_data.py --offline   # reuse cached files only
 """
 
 from __future__ import annotations
 
 import argparse
+import html as html_module
 import json
+import random
 import re
 import subprocess
 import sys
+import time
+import unicodedata
+import xml.etree.ElementTree as ET
+import zipfile
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -33,6 +46,31 @@ DATA_DIR = ROOT / "assets" / "data"
 BG_URL = "https://bookchanges.com/wp-content/uploads/2009/09/Bg-Chapter-{chapter}-diff.htm"
 KB_INDEX_URL = "https://bookchanges.com/krsna-book-complete-list-of-changes/"
 CC_INDEX_URL = "https://bookchanges.com/caitanya-caritamrta-changes-%E2%80%94-full-list"
+
+SB_SITEMAP_URL = "https://vedabase.cc/sitemap-en-books.xml"
+SB_ORIGINAL_BASE = "https://vedabase.cc"
+SB_REVISED_BASE = "https://vedabase.io/en/library"
+SB_DOCX_PATH = Path(r"C:\Users\austr\OneDrive\Documents\sb.docx")
+
+# The VedaBase DOCX uses Michael Best's legacy diacritic font encoding.
+VEDABASE_UNICODE = {
+    ord("Ï"): "Ñ", ord("ï"): "ñ",
+    ord("Ä"): "Ā", ord("ä"): "ā",
+    ord("É"): "Ī", ord("é"): "ī",
+    ord("Ç"): "Ś", ord("ç"): "ś",
+    ord("Ü"): "Ū", ord("ü"): "ū",
+    ord("Ò"): "Ḍ", ord("ò"): "ḍ",
+    ord("Ù"): "Ḥ", ord("ù"): "ḥ",
+    ord("ß"): "Ḷ", ord("ÿ"): "ḷ",
+    ord("À"): "Ṁ", ord("à"): "ṁ",
+    ord("Ì"): "Ṅ", ord("ì"): "ṅ",
+    ord("Ë"): "Ṇ", ord("ë"): "ṇ",
+    ord("Å"): "Ṛ", ord("å"): "ṛ",
+    ord("È"): "Ṝ", ord("è"): "ṝ",
+    ord("Ñ"): "Ṣ", ord("ñ"): "ṣ",
+    ord("Ö"): "Ṭ", ord("ö"): "ṭ",
+    ord("û"): "l̐",
+}
 
 BG_CHAPTER_TITLES = {
     1: "Observing the Armies on the Battlefield of Kuruksetra",
@@ -181,6 +219,37 @@ BOOKS: dict[str, BookConfig] = {
         default_reference="intro",
         reference_style="cc",
     ),
+    "sb": BookConfig(
+        id="sb",
+        title="Srimad-Bhagavatam",
+        short_title="Srimad-Bhagavatam",
+        asset="sb_diffs.json",
+        original_edition="Original pre-revision edition printed during Prabhupada's lifetime",
+        revised_edition="Bhaktivedanta VedaBase 2025 revised edition",
+        original_label="ORIGINAL EDITION",
+        revised_label="REVISED EDITION",
+        reference_prefix="SB",
+        unit_label="verse",
+        unit_label_plural="verses",
+        source_name=(
+            "vedabase.cc original edition compared with Bhaktivedanta "
+            "VedaBase 2025"
+        ),
+        source_url="https://vedabase.io/en/library/",
+        source_note=(
+            "The original side is vedabase.cc's text of the editions printed "
+            "during Srila Prabhupada's lifetime, verified against scans of the "
+            "printed books. The revised side is exported from the supplied "
+            "Bhaktivedanta VedaBase 2025 DOCX. Devanagari, transliteration and "
+            "word-for-word synonyms are not compared. Coverage ends at SB 10.13 "
+            "because no original lifetime edition was printed for the later "
+            "chapters of Canto 10 or for Cantos 11-12."
+        ),
+        section_labels=("TRANSLATION", "PURPORT"),
+        default_section="TRANSLATION",
+        default_reference="",
+        reference_style="sb",
+    ),
 }
 
 
@@ -190,6 +259,31 @@ class ChapterSpec:
     number_label: str
     title: str
     url: str
+
+
+@dataclass(frozen=True)
+class VerseSpec:
+    canto: int
+    chapter: int
+    verse: str
+    original_url: str
+    revised_url: str
+
+    @property
+    def key(self) -> str:
+        return f"{self.canto}-{self.chapter}-{self.verse}"
+
+    @property
+    def reference(self) -> str:
+        return f"{self.canto}.{self.chapter}.{self.verse}"
+
+    @property
+    def chapter_number(self) -> int:
+        return self.canto * 100 + self.chapter
+
+    @property
+    def chapter_label(self) -> str:
+        return f"{self.canto}.{self.chapter}"
 
 
 def fetch_url(url: str, cache_name: str, offline: bool, min_bytes: int = 1000) -> str:
@@ -211,6 +305,419 @@ def fetch_url(url: str, cache_name: str, offline: bool, min_bytes: int = 1000) -
         check=True,
     )
     return path.read_text(encoding="utf-8", errors="replace")
+
+
+def fetch_files_parallel(
+    jobs: list[tuple[str, str, int]], offline: bool
+) -> dict[str, str]:
+    """Fetch many small source files, reusing cached copies when possible."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    results: dict[str, str] = {}
+    pending: list[tuple[str, str, int]] = []
+    unavailable: list[tuple[str, str]] = []
+
+    for url, cache_name, min_bytes in jobs:
+        path = CACHE_DIR / cache_name
+        if path.exists() and path.stat().st_size > min_bytes:
+            results[cache_name] = path.read_text(encoding="utf-8", errors="replace")
+        elif offline:
+            raise FileNotFoundError(f"No cached source for {url}: {path}")
+        else:
+            pending.append((url, cache_name, min_bytes))
+
+    if pending:
+        print(
+            f"  downloading {len(pending)} source files with 3 workers ...",
+            flush=True,
+        )
+
+        def download(job: tuple[str, str, int]) -> tuple[str, str | None]:
+            url, cache_name, min_bytes = job
+            path = CACHE_DIR / cache_name
+            temp_path = CACHE_DIR / f"{cache_name}.part"
+            status = "000"
+
+            for attempt in range(8):
+                if temp_path.exists():
+                    temp_path.unlink()
+                process = subprocess.run(
+                    [
+                        "curl.exe", "-L", "-sS", "--compressed",
+                        "--connect-timeout", "20", "--max-time", "90",
+                        "--retry", "2", "--retry-delay", "2",
+                        "--retry-connrefused",
+                        "-A", "Mozilla/5.0",
+                        "-o", str(temp_path), "-w", "%{http_code}", url,
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                output = process.stdout.strip()
+                status = output.splitlines()[-1] if output else "000"
+                if (
+                    status == "200"
+                    and temp_path.exists()
+                    and temp_path.stat().st_size > min_bytes
+                ):
+                    temp_path.replace(path)
+                    return cache_name, path.read_text(
+                        encoding="utf-8", errors="replace"
+                    )
+                if status.startswith("4"):
+                    if temp_path.exists():
+                        temp_path.unlink()
+                    unavailable.append((url, status))
+                    return cache_name, None
+                if temp_path.exists():
+                    temp_path.unlink()
+                time.sleep(min(2 ** attempt, 20) + random.uniform(0, 1))
+
+            unavailable.append((url, status))
+            return cache_name, None
+
+        done = 0
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = {pool.submit(download, job): job for job in pending}
+            for future in as_completed(futures):
+                cache_name, text = future.result()
+                if text is not None:
+                    results[cache_name] = text
+                done += 1
+                if done % 1000 == 0:
+                    print(f"  downloaded {done}/{len(pending)}", flush=True)
+
+    if unavailable:
+        print(
+            f"  warning: {len(unavailable)} source files unavailable; "
+            "affected verses will be skipped",
+            flush=True,
+        )
+    return results
+
+
+def sb_verse_specs(offline: bool) -> list[VerseSpec]:
+    """List every lifetime-published Srimad-Bhagavatam verse in the sitemap."""
+    xml = fetch_url(SB_SITEMAP_URL, "sb-sitemap.xml", offline, min_bytes=100000)
+    pattern = re.compile(
+        r"<loc>https://vedabase\.cc/sb/(\d+)/(\d+)/(\d+)/</loc>"
+    )
+    specs: list[VerseSpec] = []
+    seen: set[str] = set()
+    for canto_s, chapter_s, verse in pattern.findall(xml):
+        canto, chapter = int(canto_s), int(chapter_s)
+        if canto > 10 or (canto == 10 and chapter > 13):
+            continue  # no original lifetime edition was printed for these
+        key = f"{canto}-{chapter}-{verse}"
+        if key in seen:
+            continue
+        seen.add(key)
+        specs.append(
+            VerseSpec(
+                canto=canto,
+                chapter=chapter,
+                verse=verse,
+                original_url=f"{SB_ORIGINAL_BASE}/sb/{canto}/{chapter}/{verse}.md",
+                revised_url=f"{SB_REVISED_BASE}/sb/{canto}/{chapter}/{verse}/",
+            )
+        )
+    return sorted(specs, key=lambda s: (s.canto, s.chapter, int(s.verse)))
+
+
+def normalize_text(text: str) -> str:
+    text = html_module.unescape(text)
+    text = unicodedata.normalize("NFC", text)
+    text = text.replace("\xa0", " ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def vedabase_unicode(text: str) -> str:
+    """Convert VedaBase's legacy diacritic font encoding to Unicode."""
+    return text.translate(VEDABASE_UNICODE)
+
+
+def load_sb_docx(
+    path: Path,
+) -> tuple[dict[str, dict[str, list[str]]], dict[str, str]]:
+    """Read revised Translation/Purport paragraphs and chapter titles from a DOCX."""
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    with zipfile.ZipFile(path) as archive:
+        root = ET.fromstring(archive.read("word/document.xml"))
+
+    paragraphs = []
+    for para in root.findall(".//w:p", ns):
+        text = "".join(
+            node.text or "" for node in para.findall(".//w:t", ns)
+        ).strip()
+        if text:
+            paragraphs.append(vedabase_unicode(text))
+
+    verse_re = re.compile(r"^SB (\d+)\.(\d+)\.(\d+)$")
+    chapter_re = re.compile(r"^SB (\d+)\.(\d+): (.+)$")
+    verses: dict[str, dict[str, list[str]]] = {}
+    titles: dict[str, str] = {}
+    current: str | None = None
+    section: str | None = None
+
+    for text in paragraphs:
+        chapter_match = chapter_re.match(text)
+        if chapter_match:
+            canto, chapter, title = chapter_match.groups()
+            titles[f"{int(canto)}-{int(chapter)}"] = normalize_text(title)
+            section = None
+            continue
+        match = verse_re.match(text)
+        if match:
+            canto, chapter, verse = match.groups()
+            key = f"{int(canto)}-{int(chapter)}-{verse}"
+            verses[key] = {"TRANSLATION": [], "PURPORT": []}
+            current = key
+            section = None
+            continue
+        if current is None:
+            continue
+
+        upper = text.strip().upper()
+        if upper == "TRANSLATION":
+            section = "TRANSLATION"
+            continue
+        if upper == "PURPORT":
+            section = "PURPORT"
+            continue
+        if upper in {"TEXT", "SYNONYMS", "DEVANAGARI"}:
+            section = None
+            continue
+        if section is None:
+            continue
+
+        clean = normalize_text(text)
+        if clean and clean not in verses[current][section]:
+            verses[current][section].append(clean)
+
+    return verses, titles
+
+
+def markdown_sections(markdown: str, heading: str) -> list[str]:
+    """Return paragraphs under one '## Heading' block in a vedabase.cc .md file."""
+    lines = markdown.splitlines()
+    start = None
+    wanted = f"## {heading.lower()}"
+    for index, line in enumerate(lines):
+        if line.strip().lower() == wanted:
+            start = index + 1
+            break
+    if start is None:
+        return []
+
+    block: list[str] = []
+    for line in lines[start:]:
+        if line.startswith("## "):
+            break
+        cleaned = line.strip()
+        if cleaned.startswith(">"):
+            cleaned = cleaned[1:].strip()
+        cleaned = cleaned.replace("**", "").replace("*", "")
+        block.append(cleaned)
+
+    paragraphs: list[str] = []
+    current: list[str] = []
+    for line in block + [""]:
+        if line:
+            current.append(line)
+        elif current:
+            paragraphs.append(normalize_text(" ".join(current)))
+            current = []
+    return [p for p in paragraphs if p]
+
+
+def append_segment(segments: list[dict], kind: str, text: str) -> None:
+    if not text:
+        return
+    if segments and segments[-1]["k"] == kind:
+        segments[-1]["t"] += text
+    else:
+        segments.append({"t": text, "k": kind})
+
+
+THUS_END_RE = re.compile(r"^Thus end the Bhaktivedanta purports", re.IGNORECASE)
+
+
+def normalize_sections(
+    translation: list[str], purport: list[str]
+) -> tuple[list[str], list[str]]:
+    """Keep the 'Thus end...' note in the same section on both sites."""
+    moved = [p for p in translation if THUS_END_RE.match(p)]
+    if moved:
+        translation = [p for p in translation if not THUS_END_RE.match(p)]
+        for paragraph in moved:
+            if paragraph not in purport:
+                purport.append(paragraph)
+    return translation, purport
+
+
+def diff_passages(original_paragraphs: list[str], revised_paragraphs: list[str]) -> list[dict]:
+    """Produce one or more hunks for a changed Translation or Purport section."""
+    original = " ".join(original_paragraphs)
+    revised = " ".join(revised_paragraphs)
+    if not original and not revised:
+        return []
+    if original == revised:
+        return []
+
+    if not original:
+        return [{"original": [], "revised": [{"t": revised, "k": "add"}]}]
+    if not revised:
+        return [{"original": [{"t": original, "k": "del"}], "revised": []}]
+
+    left_tokens = re.findall(r"\S+\s*", original)
+    right_tokens = re.findall(r"\S+\s*", revised)
+    matcher = SequenceMatcher(None, left_tokens, right_tokens, autojunk=False)
+    left: list[dict] = []
+    right: list[dict] = []
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for index in range(i1, i2):
+                append_segment(left, "same", left_tokens[index])
+            for index in range(j1, j2):
+                append_segment(right, "same", right_tokens[index])
+        elif tag == "replace":
+            paired = min(i2 - i1, j2 - j1)
+            for offset in range(paired):
+                append_segment(left, "chg", left_tokens[i1 + offset])
+                append_segment(right, "chg", right_tokens[j1 + offset])
+            for index in range(i1 + paired, i2):
+                append_segment(left, "del", left_tokens[index])
+            for index in range(j1 + paired, j2):
+                append_segment(right, "add", right_tokens[index])
+        elif tag == "delete":
+            for index in range(i1, i2):
+                append_segment(left, "del", left_tokens[index])
+        elif tag == "insert":
+            for index in range(j1, j2):
+                append_segment(right, "add", right_tokens[index])
+
+    return [{"original": left, "revised": right}]
+
+
+def build_sb_dataset(offline: bool) -> tuple[dict, dict]:
+    config = BOOKS["sb"]
+    specs = sb_verse_specs(offline)
+    print(f"  {len(specs)} lifetime-published verses", flush=True)
+
+    revised_verses, chapter_titles = load_sb_docx(SB_DOCX_PATH)
+    print(f"  {len(revised_verses)} revised verses in VedaBase DOCX", flush=True)
+
+    jobs: list[tuple[str, str, int]] = [
+        (spec.original_url, f"sb-orig-{spec.key}.md", 200) for spec in specs
+    ]
+    files = fetch_files_parallel(jobs, offline)
+
+    chapters: dict[int, dict] = {}
+    skipped = 0
+    for index, spec in enumerate(specs, start=1):
+        original_md = files.get(f"sb-orig-{spec.key}.md")
+        revised_sections = revised_verses.get(spec.key)
+        if original_md is None or revised_sections is None:
+            skipped += 1
+            if skipped <= 20:
+                print(f"  skipping SB {spec.reference}: source unavailable", flush=True)
+            continue
+        chapter_number = spec.chapter_number
+
+        if chapter_number not in chapters:
+            chapter_key = f"{spec.canto}-{spec.chapter}"
+            chapters[chapter_number] = {
+                "chapter": chapter_number,
+                "numberLabel": spec.chapter_label,
+                "title": chapter_titles.get(
+                    chapter_key, f"Canto {spec.canto}, Chapter {spec.chapter}"
+                ),
+                "sectionCount": 0,
+                "hunkCount": 0,
+                "sections": [],
+            }
+
+        original_translation = markdown_sections(original_md, "TRANSLATION")
+        original_purport = markdown_sections(original_md, "PURPORT")
+        revised_translation = revised_sections["TRANSLATION"]
+        revised_purport = revised_sections["PURPORT"]
+        original_translation, original_purport = normalize_sections(
+            original_translation, original_purport
+        )
+        revised_translation, revised_purport = normalize_sections(
+            revised_translation, revised_purport
+        )
+        section_paragraphs = {
+            "TRANSLATION": (original_translation, revised_translation),
+            "PURPORT": (original_purport, revised_purport),
+        }
+
+        sections: dict[str, dict] = {}
+        for heading in config.section_labels:
+            original_paragraphs, revised_paragraphs = section_paragraphs[heading]
+            hunks = diff_passages(original_paragraphs, revised_paragraphs)
+            if not hunks:
+                continue
+            section = sections.setdefault(
+                spec.reference, {"reference": spec.reference, "hunks": []}
+            )
+            for hunk in hunks:
+                section["hunks"].append(
+                    {
+                        "id": f"sb-{spec.key}-{heading.lower()}-{len(section['hunks']) + 1}",
+                        "section": heading,
+                        "original": hunk["original"],
+                        "revised": hunk["revised"],
+                    }
+                )
+
+        if sections:
+            chapter = chapters[chapter_number]
+            chapter["sections"].extend(sections.values())
+            chapter["sectionCount"] += len(sections)
+            chapter["hunkCount"] += sum(len(s["hunks"]) for s in sections.values())
+
+        if index % 500 == 0:
+            print(f"  processed {index}/{len(specs)} verses", flush=True)
+
+    if skipped:
+        print(f"  skipped {skipped} verses with unavailable sources", flush=True)
+    ordered_chapters = [chapters[key] for key in sorted(chapters)]
+    total_hunks = sum(c["hunkCount"] for c in ordered_chapters)
+    dataset = {
+        "schema": 2,
+        "id": config.id,
+        "book": config.title,
+        "shortTitle": config.short_title,
+        "originalEdition": config.original_edition,
+        "revisedEdition": config.revised_edition,
+        "originalLabel": config.original_label,
+        "revisedLabel": config.revised_label,
+        "referencePrefix": config.reference_prefix,
+        "unitLabel": config.unit_label,
+        "unitLabelPlural": config.unit_label_plural,
+        "source": {
+            "name": config.source_name,
+            "url": config.source_url,
+            "note": config.source_note,
+        },
+        "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "chapterCount": len(ordered_chapters),
+        "sectionCount": sum(c["sectionCount"] for c in ordered_chapters),
+        "hunkCount": total_hunks,
+        "chapters": ordered_chapters,
+    }
+    manifest = {
+        "id": config.id,
+        "title": config.title,
+        "shortTitle": config.short_title,
+        "asset": config.asset,
+        "originalEdition": config.original_edition,
+        "revisedEdition": config.revised_edition,
+        "chapterCount": len(ordered_chapters),
+        "hunkCount": total_hunks,
+    }
+    return dataset, manifest
 
 
 def bg_chapters(offline: bool) -> list[ChapterSpec]:
@@ -534,6 +1041,8 @@ def build_chapter(spec: ChapterSpec, html: str, config: BookConfig) -> dict:
 
 
 def build_dataset(book_id: str, offline: bool) -> tuple[dict, dict]:
+    if book_id == "sb":
+        return build_sb_dataset(offline)
     config = BOOKS[book_id]
     specs = chapter_specs(book_id, offline)
     chapters: list[dict] = []
@@ -590,8 +1099,11 @@ def build_dataset(book_id: str, offline: bool) -> tuple[dict, dict]:
 
 
 def main() -> int:
+    global SB_DOCX_PATH
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--offline", action="store_true", help="only use cached HTML")
+    parser.add_argument(
+        "--offline", action="store_true", help="only use cached source files"
+    )
     parser.add_argument(
         "--books",
         nargs="+",
@@ -599,7 +1111,16 @@ def main() -> int:
         default=sorted(BOOKS),
         help="books to rebuild (default: all)",
     )
+    parser.add_argument(
+        "--sb-docx",
+        type=Path,
+        default=SB_DOCX_PATH,
+        help=f"VedaBase DOCX for the revised SB text (default: {SB_DOCX_PATH})",
+    )
     args = parser.parse_args()
+    SB_DOCX_PATH = args.sb_docx
+    if "sb" in args.books and not SB_DOCX_PATH.exists():
+        raise FileNotFoundError(f"VedaBase DOCX not found: {SB_DOCX_PATH}")
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     manifests: list[dict] = []

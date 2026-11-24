@@ -9,10 +9,10 @@ void main() {
   testWidgets('opens a book, chapter, and side-by-side comparison', (tester) async {
     await tester.runAsync(() => DiffRepository.instance.loadBooks());
     await tester.runAsync(() => DiffRepository.instance.loadBook('bg'));
-    await tester.pumpWidget(const BookCompareApp());
+    await tester.pumpWidget(const BookEditApp());
     await tester.pump();
 
-    expect(find.text('Book Compare'), findsOneWidget);
+    expect(find.text('Book edit'), findsOneWidget);
     expect(find.text('Bhagavad-gita'), findsOneWidget);
 
     await tester.tap(find.text('Bhagavad-gita'));

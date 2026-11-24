@@ -12,7 +12,7 @@ class BooksScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Book Compare'),
+        title: const Text('Book edit'),
         actions: [
           IconButton(
             icon: const Icon(Icons.info_outline),

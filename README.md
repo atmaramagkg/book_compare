@@ -1,4 +1,4 @@
-# Book Compare
+# Book edit
 
 An offline Flutter Android app for comparing editions of Srila Prabhupada's
 books side by side. It shows only passages that differ, with the two texts
@@ -12,6 +12,7 @@ the source texts without commentary or editorializing.
 | Bhagavad-gita As It Is | 1972 Macmillan ↔ revised/post-1977 | 18 | 2,144 |
 | Sri Caitanya-caritamrta | 1975 original ↔ Vedabase 2003 revised | 63 | 15,671 |
 | Krsna: The Supreme Personality of Godhead | 1970 original ↔ Vedabase 2013 revised | 89 | 2,947 |
+| Srimad-Bhagavatam | Original lifetime editions ↔ VedaBase 2025 revised | 214 | 6,954 |
 
 The app opens to a book picker. Each book has its own chapter list, section
 list, edition labels, and source notes. Runtime is fully offline after
@@ -19,12 +20,22 @@ installation; there are no network calls or API dependencies.
 
 ## Source data
 
-The datasets are built from the chapter-by-chapter ExamDiff reports linked from
+The Bhagavad-gita, Caitanya-caritamrta and Krsna Book datasets are built from
+the chapter-by-chapter ExamDiff reports linked from
 [bookchanges.com](https://bookchanges.com/category/changes/). Each report has
 two line-aligned panes: the left pane is the original side and the right pane
 is the revised side. The parser supports both the older `d21`/`d22` markup used
 by the Bhagavad-gita reports and the newer `file1`/`file2` markup used by the
 Caitanya-caritamrta and Krsna Book reports.
+
+The Srimad-Bhagavatam dataset is built directly from verse text. The original
+side comes from [vedabase.cc](https://vedabase.cc/en/), which publishes the
+pre-revision editions printed during Srila Prabhupada's lifetime, verified
+against scans of the printed books. The revised side comes from the supplied
+Bhaktivedanta VedaBase 2025 DOCX. Devanagari, transliteration and word-for-word
+synonyms are not compared. Coverage ends at SB 10.13 because no original
+lifetime edition was printed for the remaining Canto 10 chapters or for Cantos
+11-12.
 
 Important limitations, also shown in the app's About screen:
 
@@ -33,6 +44,8 @@ Important limitations, also shown in the app's About screen:
   scanning artefacts may remain.
 - Krsna Book is continuous prose, so its changes are grouped as one passage
   per chapter.
+- Srimad-Bhagavatam changes are grouped by verse and section (Translation or
+  Purport); only lifetime-published text is covered.
 - The app highlights differences; it does not adjudicate them.
 
 ## Project layout
@@ -64,10 +77,14 @@ To rebuild only selected books:
 ```bash
 python tools/build_diff_data.py --books bg
 python tools/build_diff_data.py --books cc kb
+python tools/build_diff_data.py --books sb
 ```
 
-The script downloads HTML reports to `tools/.cache/` on first run and then
-parses them into `assets/data/`. To rebuild using only cached files:
+The script downloads source pages to `tools/.cache/` on first run and then
+parses them into `assets/data/`. The Srimad-Bhagavatam build fetches the original
+verse files in parallel and reads the revised text from the VedaBase DOCX. Pass
+`--sb-docx PATH` if the DOCX is somewhere other than the default location.
+Later runs reuse the cache. To rebuild using only cached files:
 
 ```bash
 python tools/build_diff_data.py --offline
