@@ -5,14 +5,19 @@ Most books are built from ExamDiff reports: each report is an HTML table with
 two line-aligned panes, whose inline spans map to highlight kinds. Srimad
 Bhagavatam is built directly from verse text: the original side comes from
 vedabase.cc's clean Markdown files and the revised side from a supplied
-Bhaktivedanta VedaBase DOCX. Only changed passages are written to compact JSON
-files.
+Bhaktivedanta VedaBase DOCX. The Nectar of Devotion, Teachings of Lord Caitanya
+and Sri Isopanisad are built from local Vedabase Original JSONP files and a
+supplied three-book VedaBase DOCX. Only changed passages are written to compact
+JSON files.
 
 Usage:
     python tools/build_diff_data.py
     python tools/build_diff_data.py --books bg kb
     python tools/build_diff_data.py --books sb
     python tools/build_diff_data.py --books sb --sb-docx /path/to/sb.docx
+    python tools/build_diff_data.py --books nod tlc iso
+    python tools/build_diff_data.py --books iso \
+        --original-dir /path/to/vedabase/data --three-books-docx /path/to/3-books.docx
     python tools/build_diff_data.py --offline   # reuse cached files only
 """
 
@@ -51,6 +56,16 @@ SB_SITEMAP_URL = "https://vedabase.cc/sitemap-en-books.xml"
 SB_ORIGINAL_BASE = "https://vedabase.cc"
 SB_REVISED_BASE = "https://vedabase.io/en/library"
 SB_DOCX_PATH = Path(r"C:\Users\austr\OneDrive\Documents\sb.docx")
+
+# Local sources for the three smaller books.
+ORIGINAL_DATA_DIR = Path(r"C:\Portable\Vedabase Original\data")
+THREE_BOOKS_DOCX_PATH = Path(r"C:\Users\austr\OneDrive\Documents\3 books.docx")
+LOCAL_BOOK_IDS = {"nod", "tlc", "iso"}
+BOOK_ORDER = ("bg", "cc", "kb", "sb", "nod", "tlc", "iso")
+LOCAL_LABELS = {
+    "nod": {"0a": "Preface", "0b": "Introduction"},
+    "tlc": {"0a": "Preface", "0b": "Prologue", "0c": "Mission", "0d": "Introduction"},
+}
 
 # The VedaBase DOCX uses Michael Best's legacy diacritic font encoding.
 VEDABASE_UNICODE = {
@@ -249,6 +264,95 @@ BOOKS: dict[str, BookConfig] = {
         default_section="TRANSLATION",
         default_reference="",
         reference_style="sb",
+    ),
+    "nod": BookConfig(
+        id="nod",
+        title="The Nectar of Devotion",
+        short_title="Nectar of Devotion",
+        asset="nod_diffs.json",
+        original_edition="Original edition (Vedabase Original)",
+        revised_edition="Bhaktivedanta VedaBase 2025 revised edition",
+        original_label="ORIGINAL EDITION",
+        revised_label="REVISED EDITION",
+        reference_prefix="NOD",
+        unit_label="chapter",
+        unit_label_plural="chapters",
+        source_name=(
+            "Vedabase Original compared with Bhaktivedanta VedaBase 2025"
+        ),
+        source_url="https://vedabase.cc/en/nod/",
+        source_note=(
+            "The original side is the offline Vedabase Original edition. The "
+            "revised side is exported from the supplied Bhaktivedanta VedaBase "
+            "2025 DOCX. Nectar of Devotion is continuous prose, so changes are "
+            "grouped as one passage per chapter, including chapter headings. "
+            "Passages are matched by content when chapter boundaries differ. "
+            "The original text is not a facsimile of the printed book and may "
+            "contain scanning artefacts."
+        ),
+        section_labels=(),
+        default_section="Passage",
+        default_reference="Chapter text",
+        reference_style="none",
+    ),
+    "tlc": BookConfig(
+        id="tlc",
+        title="Teachings of Lord Caitanya",
+        short_title="Teachings of Lord Caitanya",
+        asset="tlc_diffs.json",
+        original_edition="Original edition (Vedabase Original)",
+        revised_edition="Bhaktivedanta VedaBase 2025 revised edition",
+        original_label="ORIGINAL EDITION",
+        revised_label="REVISED EDITION",
+        reference_prefix="TLC",
+        unit_label="chapter",
+        unit_label_plural="chapters",
+        source_name=(
+            "Vedabase Original compared with Bhaktivedanta VedaBase 2025"
+        ),
+        source_url="https://vedabase.cc/en/tlc/",
+        source_note=(
+            "The original side is the offline Vedabase Original edition. The "
+            "revised side is exported from the supplied Bhaktivedanta VedaBase "
+            "2025 DOCX. Teachings of Lord Caitanya is continuous prose, so "
+            "changes are grouped as one passage per chapter, including chapter "
+            "headings. Passages are matched by content when chapter boundaries "
+            "differ. The original text is not a facsimile of the printed book "
+            "and may contain scanning artefacts."
+        ),
+        section_labels=(),
+        default_section="Passage",
+        default_reference="Chapter text",
+        reference_style="none",
+    ),
+    "iso": BookConfig(
+        id="iso",
+        title="Śrī Īśopaniṣad",
+        short_title="Īśopaniṣad",
+        asset="iso_diffs.json",
+        original_edition="Original edition (Vedabase Original)",
+        revised_edition="Bhaktivedanta VedaBase 2025 revised edition",
+        original_label="ORIGINAL EDITION",
+        revised_label="REVISED EDITION",
+        reference_prefix="Īśo",
+        unit_label="mantra",
+        unit_label_plural="mantras",
+        source_name=(
+            "Vedabase Original compared with Bhaktivedanta VedaBase 2025"
+        ),
+        source_url="https://vedabase.cc/en/iso/",
+        source_note=(
+            "The original side is the offline Vedabase Original edition. The "
+            "revised side is exported from the supplied Bhaktivedanta VedaBase "
+            "2025 DOCX. Changes are grouped by mantra and section (Translation "
+            "or Purport). Devanagari, transliteration and word-for-word synonyms "
+            "are not compared. The original text is not a facsimile of the "
+            "printed book and may contain scanning artefacts."
+        ),
+        section_labels=("TRANSLATION", "PURPORT"),
+        default_section="TRANSLATION",
+        default_reference="",
+        reference_style="iso",
     ),
 }
 
@@ -494,6 +598,393 @@ def load_sb_docx(
             verses[current][section].append(clean)
 
     return verses, titles
+
+
+def html_paragraph(markup: str) -> str:
+    """Strip inline HTML from one paragraph in the offline Vedabase files."""
+    value = re.sub(r"<br\s*/?>", " ", markup, flags=re.IGNORECASE)
+    value = re.sub(r"<[^>]+>", "", value)
+    return normalize_text(value)
+
+
+def read_docx_paragraphs(path: Path) -> list[str]:
+    """Read non-empty paragraphs from a DOCX, retrying if OneDrive has it open."""
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    for attempt in range(3):
+        try:
+            with zipfile.ZipFile(path) as archive:
+                root = ET.fromstring(archive.read("word/document.xml"))
+            break
+        except PermissionError:
+            if attempt == 2:
+                raise
+            time.sleep(0.5)
+
+    paragraphs = []
+    for para in root.findall(".//w:p", ns):
+        text = "".join(
+            node.text or "" for node in para.findall(".//w:t", ns)
+        ).strip()
+        if text:
+            paragraphs.append(text)
+    return paragraphs
+
+
+def load_three_books_docx(path: Path) -> dict[str, dict[str, dict[str, list[str]]]]:
+    """Read revised text for Nectar of Devotion, Teachings of Lord Caitanya and Isopanisad."""
+    books: dict[str, dict[str, dict[str, list[str]]]] = {
+        "tlc": {}, "nod": {}, "iso": {}
+    }
+    current_book = "tlc"
+    current_key: str | None = None
+    section: str | None = None
+    skip_next = False
+
+    for raw in read_docx_paragraphs(path):
+        if skip_next:
+            skip_next = False
+            continue
+        text = vedabase_unicode(raw)
+
+        if re.match(r"^TheNectarofDevotion,", text):
+            current_book, current_key, section = "nod", None, None
+            continue
+        if text == "Śrī Īśopaniṣad" and current_book != "iso":
+            current_book, current_key, section = "iso", None, None
+            continue
+
+        marker_seen = False
+        key: str | None = None
+        prose = True
+        title = ""
+
+        if current_book == "tlc":
+            match = re.match(
+                r"^TLC (?:(Preface|Prologue|Mission|Introduction)|(\d+):)\s*(.*)$",
+                text,
+            )
+            if match:
+                marker_seen = True
+                word, number, title_text = match.groups()
+                key = (
+                    {"Preface": "0a", "Prologue": "0b",
+                     "Mission": "0c", "Introduction": "0d"}.get(word)
+                    if word else number
+                )
+                if number:
+                    title = normalize_text(title_text)
+        elif current_book == "nod":
+            match = re.match(
+                r"^NoD (?:(Preface|Introduction|Dedication)|(\d+):)\s*(.*)$", text
+            )
+            if match:
+                marker_seen = True
+                word, number, title_text = match.groups()
+                key = {"Preface": "0a", "Introduction": "0b"}.get(word) if word else number
+                if number:
+                    title = normalize_text(title_text)
+        else:
+            if re.match(r"^Iso (?:Introduction|Invocation)", text, re.IGNORECASE):
+                marker_seen = True
+            else:
+                match = re.match(r"^Iso mantra (\d+)$", text, re.IGNORECASE)
+                if match:
+                    marker_seen = True
+                    prose = False
+                    key = str(int(match.group(1)))
+
+        if marker_seen:
+            current_key = key
+            section = "TRANSLATION" if prose and key is not None else None
+            if key is not None:
+                entry = books[current_book].setdefault(
+                    key, {"TITLE": "", "TRANSLATION": [], "PURPORT": []}
+                )
+                if title:
+                    entry["TITLE"] = title
+            skip_next = bool(title) or current_book == "iso"
+            continue
+
+        if current_key is None:
+            continue
+
+        target = books[current_book][current_key]
+        if current_book == "iso":
+            upper = text.strip().upper()
+            if upper == "TRANSLATION":
+                section = "TRANSLATION"
+                continue
+            if upper == "PURPORT":
+                section = "PURPORT"
+                continue
+            if upper in {"TEXT", "SYNONYMS", "DEVANAGARI"}:
+                section = None
+                continue
+            if section is None:
+                continue
+            clean = normalize_text(text)
+            if clean and clean not in target[section]:
+                target[section].append(clean)
+        else:
+            clean = normalize_text(text)
+            if clean and clean not in target["TRANSLATION"]:
+                target["TRANSLATION"].append(clean)
+
+    return books
+
+
+def align_prose_paragraphs(
+    original: dict[str, dict], revised: dict[str, dict], book_id: str
+) -> dict[str, list[str]]:
+    """Match prose paragraphs by content when chapter boundaries shift.
+
+    Returns revised paragraphs grouped by original chapter key. The revised
+    chapter title is prepended when the DOCX marker supplies one.
+    """
+    word_re = re.compile(r"[a-zāīūṛṝḷḹēōṁṃḥśṣṭḍñṅṇ]+")
+    original_items: list[tuple[str, str, set[str]]] = []
+    revised_items: list[tuple[str, str, set[str]]] = []
+
+    for key, sections in original.items():
+        paragraphs = [p for p in sections["TRANSLATION"] if p]
+        if book_id in {"nod", "tlc"}:
+            paragraphs = paragraphs[1:]  # chapter title is handled separately
+        for paragraph in paragraphs:
+            original_items.append(
+                (key, paragraph, set(word_re.findall(paragraph.lower())))
+            )
+
+    for key, sections in revised.items():
+        for paragraph in sections["TRANSLATION"]:
+            if paragraph:
+                revised_items.append(
+                    (key, paragraph, set(word_re.findall(paragraph.lower())))
+                )
+
+    count_original, count_revised = len(original_items), len(revised_items)
+    if not count_original or not count_revised:
+        return {key: [] for key in original}
+
+    def similarity(left: set[str], right: set[str]) -> float:
+        if not left or not right:
+            return 0.0
+        common = len(left & right)
+        return common / (len(left) + len(right) - common)
+
+    gap = -0.35
+    previous = [index * gap for index in range(count_revised + 1)]
+    directions: list[bytearray] = []
+    for i in range(1, count_original + 1):
+        current = [i * gap] + [0.0] * count_revised
+        row = bytearray(count_revised + 1)
+        left_words = original_items[i - 1][2]
+        for j in range(1, count_revised + 1):
+            diagonal = previous[j - 1] + similarity(
+                left_words, revised_items[j - 1][2]
+            ) - 0.45
+            above = previous[j] + gap
+            beside = current[j - 1] + gap
+            best = diagonal
+            direction = 1
+            if above > best:
+                best, direction = above, 2
+            if beside > best:
+                best, direction = beside, 3
+            current[j] = best
+            row[j] = direction
+        directions.append(row)
+        previous = current
+
+    pairs: list[tuple[int, int]] = []
+    i, j = count_original, count_revised
+    while i > 0 and j > 0:
+        direction = directions[i - 1][j]
+        if direction == 1:
+            pairs.append((i - 1, j - 1))
+            i -= 1
+            j -= 1
+        elif direction == 2:
+            i -= 1
+        else:
+            j -= 1
+    pairs.reverse()
+
+    matched: dict[int, str] = {}
+    votes: Counter[tuple[str, str]] = Counter()
+    for original_index, revised_index in pairs:
+        original_key = original_items[original_index][0]
+        revised_key = revised_items[revised_index][0]
+        matched[revised_index] = original_key
+        votes[(original_key, revised_key)] += 1
+
+    chosen: dict[str, tuple[int, str]] = {}
+    for (original_key, revised_key), count in votes.items():
+        best = chosen.get(original_key)
+        if best is None or count > best[0] or (
+            count == best[0] and revised_key < best[1]
+        ):
+            chosen[original_key] = (count, revised_key)
+
+    last_key: str | None = None
+    for revised_index in range(count_revised):
+        if revised_index in matched:
+            last_key = matched[revised_index]
+        elif last_key is None:
+            last_key = revised_items[revised_index][0]
+        matched[revised_index] = last_key
+
+    grouped: dict[str, list[tuple[int, str]]] = {key: [] for key in original}
+    for revised_index, original_key in matched.items():
+        if original_key in grouped:
+            grouped[original_key].append(
+                (revised_index, revised_items[revised_index][1])
+            )
+
+    result: dict[str, list[str]] = {}
+    for key in original:
+        entries = sorted(grouped[key])
+        paragraphs = [text for _, text in entries]
+        revised_key = chosen.get(key, (0, key))[1]
+        title = revised.get(revised_key, {}).get("TITLE", "")
+        result[key] = ([title] if title else []) + paragraphs
+    return result
+
+
+def load_local_original(book_id: str) -> dict[str, dict]:
+    """Load one book from the offline Vedabase Original JSONP files."""
+    path = ORIGINAL_DATA_DIR / f"{book_id}.jsonp.js"
+    text = path.read_text(encoding="utf-8", errors="replace")
+    payload = json.loads(text[text.index("=") + 1:].rstrip().rstrip(";"))
+    collection = next(iter(payload.values()))
+
+    result: dict[str, dict] = {}
+    for key, entry in collection.items():
+        english = entry["en"]
+        title = normalize_text(english.get("title", ""))
+        if "blocks" in english:
+            paragraphs = [
+                html_paragraph(block["html"])
+                for block in english["blocks"]
+                if block.get("html")
+            ]
+            result[key] = {
+                "title": title,
+                "TRANSLATION": [title] + [p for p in paragraphs if p],
+                "PURPORT": [],
+            }
+        else:
+            result[key] = {
+                "title": title,
+                "TRANSLATION": [html_paragraph(english.get("translation", ""))],
+                "PURPORT": [html_paragraph(english.get("purport", ""))],
+            }
+    return result
+
+
+def build_local_dataset(book_id: str, offline: bool) -> tuple[dict, dict]:
+    """Build a dataset from local original and DOCX revised sources."""
+    del offline  # both sources are local files
+    config = BOOKS[book_id]
+    original = load_local_original(book_id)
+    revised = load_three_books_docx(THREE_BOOKS_DOCX_PATH)[book_id]
+    print(f"  {len(original)} original chapters, {len(revised)} revised chapters", flush=True)
+
+    chapters: list[dict] = []
+    skipped = 0
+    aligned = (
+        {} if book_id == "iso"
+        else align_prose_paragraphs(original, revised, book_id)
+    )
+    for key, original_sections in original.items():
+        revised_sections = revised.get(key)
+        if revised_sections is None:
+            skipped += 1
+            print(f"  skipping {config.short_title} {key}: no revised section", flush=True)
+            continue
+
+        sections: list[dict] = []
+        if book_id == "iso":
+            for heading in config.section_labels:
+                left = [p for p in original_sections[heading] if p]
+                right = [p for p in revised_sections[heading] if p]
+                hunks = diff_passages(left, right)
+                if not hunks:
+                    continue
+                section = {"reference": key, "hunks": []}
+                for hunk in hunks:
+                    section["hunks"].append({
+                        "id": f"iso-{key}-{heading.lower()}-{len(section['hunks']) + 1}",
+                        "section": heading,
+                        "original": hunk["original"],
+                        "revised": hunk["revised"],
+                    })
+                sections.append(section)
+        else:
+            left = [p for p in original_sections["TRANSLATION"] if p]
+            right = aligned.get(key, [])
+            hunks = diff_passages(left, right)
+            if hunks:
+                section = {"reference": config.default_reference, "hunks": []}
+                for hunk in hunks:
+                    section["hunks"].append({
+                        "id": f"{book_id}-{key}-passage-{len(section['hunks']) + 1}",
+                        "section": config.default_section,
+                        "original": hunk["original"],
+                        "revised": hunk["revised"],
+                    })
+                sections.append(section)
+
+        if not sections:
+            continue
+
+        title = original_sections["title"] or f"{config.short_title} {key}"
+        chapters.append({
+            "chapter": len(chapters) + 1,
+            "numberLabel": LOCAL_LABELS.get(book_id, {}).get(key, key),
+            "title": title,
+            "sectionCount": len(sections),
+            "hunkCount": sum(len(s["hunks"]) for s in sections),
+            "sections": sections,
+        })
+
+    if skipped:
+        print(f"  skipped {skipped} sections with no revised counterpart", flush=True)
+
+    total_hunks = sum(c["hunkCount"] for c in chapters)
+    dataset = {
+        "schema": 2,
+        "id": config.id,
+        "book": config.title,
+        "shortTitle": config.short_title,
+        "originalEdition": config.original_edition,
+        "revisedEdition": config.revised_edition,
+        "originalLabel": config.original_label,
+        "revisedLabel": config.revised_label,
+        "referencePrefix": config.reference_prefix,
+        "unitLabel": config.unit_label,
+        "unitLabelPlural": config.unit_label_plural,
+        "source": {
+            "name": config.source_name,
+            "url": config.source_url,
+            "note": config.source_note,
+        },
+        "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "chapterCount": len(chapters),
+        "sectionCount": sum(c["sectionCount"] for c in chapters),
+        "hunkCount": total_hunks,
+        "chapters": chapters,
+    }
+    manifest = {
+        "id": config.id,
+        "title": config.title,
+        "shortTitle": config.short_title,
+        "asset": config.asset,
+        "originalEdition": config.original_edition,
+        "revisedEdition": config.revised_edition,
+        "chapterCount": len(chapters),
+        "hunkCount": total_hunks,
+    }
+    return dataset, manifest
 
 
 def markdown_sections(markdown: str, heading: str) -> list[str]:
@@ -1041,6 +1532,8 @@ def build_chapter(spec: ChapterSpec, html: str, config: BookConfig) -> dict:
 
 
 def build_dataset(book_id: str, offline: bool) -> tuple[dict, dict]:
+    if book_id in LOCAL_BOOK_IDS:
+        return build_local_dataset(book_id, offline)
     if book_id == "sb":
         return build_sb_dataset(offline)
     config = BOOKS[book_id]
@@ -1099,7 +1592,7 @@ def build_dataset(book_id: str, offline: bool) -> tuple[dict, dict]:
 
 
 def main() -> int:
-    global SB_DOCX_PATH
+    global SB_DOCX_PATH, ORIGINAL_DATA_DIR, THREE_BOOKS_DOCX_PATH
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--offline", action="store_true", help="only use cached source files"
@@ -1117,10 +1610,41 @@ def main() -> int:
         default=SB_DOCX_PATH,
         help=f"VedaBase DOCX for the revised SB text (default: {SB_DOCX_PATH})",
     )
+    parser.add_argument(
+        "--original-dir",
+        type=Path,
+        default=ORIGINAL_DATA_DIR,
+        help=(
+            "directory containing nod/tlc/iso .jsonp.js files "
+            f"(default: {ORIGINAL_DATA_DIR})"
+        ),
+    )
+    parser.add_argument(
+        "--three-books-docx",
+        type=Path,
+        default=THREE_BOOKS_DOCX_PATH,
+        help=(
+            "VedaBase DOCX containing NOD, TLC and ISO "
+            f"(default: {THREE_BOOKS_DOCX_PATH})"
+        ),
+    )
     args = parser.parse_args()
     SB_DOCX_PATH = args.sb_docx
+    ORIGINAL_DATA_DIR = args.original_dir
+    THREE_BOOKS_DOCX_PATH = args.three_books_docx
+
     if "sb" in args.books and not SB_DOCX_PATH.exists():
         raise FileNotFoundError(f"VedaBase DOCX not found: {SB_DOCX_PATH}")
+    local_books = LOCAL_BOOK_IDS.intersection(args.books)
+    if local_books:
+        sources = [
+            ORIGINAL_DATA_DIR / f"{book_id}.jsonp.js"
+            for book_id in sorted(local_books)
+        ]
+        sources.append(THREE_BOOKS_DOCX_PATH)
+        for path in dict.fromkeys(sources):
+            if not path.exists():
+                raise FileNotFoundError(f"Local source not found: {path}")
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     manifests: list[dict] = []
@@ -1148,7 +1672,7 @@ def main() -> int:
             existing = []
     by_id = {entry["id"]: entry for entry in existing if isinstance(entry, dict) and "id" in entry}
     by_id.update({entry["id"]: entry for entry in manifests})
-    ordered = [by_id[key] for key in sorted(BOOKS) if key in by_id]
+    ordered = [by_id[key] for key in BOOK_ORDER if key in by_id]
     ordered += [entry for key, entry in by_id.items() if key not in BOOKS]
     manifest_path.write_text(
         json.dumps(ordered, ensure_ascii=False, separators=(",", ":")),

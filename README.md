@@ -13,6 +13,9 @@ the source texts without commentary or editorializing.
 | Sri Caitanya-caritamrta | 1975 original ↔ Vedabase 2003 revised | 63 | 15,671 |
 | Krsna: The Supreme Personality of Godhead | 1970 original ↔ Vedabase 2013 revised | 89 | 2,947 |
 | Srimad-Bhagavatam | Original lifetime editions ↔ VedaBase 2025 revised | 214 | 6,954 |
+| The Nectar of Devotion | Vedabase Original ↔ VedaBase 2025 revised | 53 | 53 |
+| Teachings of Lord Caitanya | Vedabase Original ↔ VedaBase 2025 revised | 36 | 36 |
+| Śrī Īśopaniṣad | Vedabase Original ↔ VedaBase 2025 revised | 15 | 16 |
 
 The app opens to a book picker. Each book has its own chapter list, section
 list, edition labels, and source notes. Runtime is fully offline after
@@ -37,15 +40,25 @@ synonyms are not compared. Coverage ends at SB 10.13 because no original
 lifetime edition was printed for the remaining Canto 10 chapters or for Cantos
 11-12.
 
+The Nectar of Devotion, Teachings of Lord Caitanya and Śrī Īśopaniṣad datasets
+use the offline Vedabase Original JSONP files for the original side and the
+supplied three-book Bhaktivedanta VedaBase 2025 DOCX for the revised side. The
+legacy VedaBase font encoding in the DOCX is converted to Unicode. The two
+prose books are grouped as one passage per chapter and are matched by content
+where chapter boundaries differ between editions. Īśopaniṣad is grouped by
+mantra and section (Translation or Purport); mantras without differences are
+omitted.
+
 Important limitations, also shown in the app's About screen:
 
 - The source reports do not compare word-for-word synonyms.
 - The text labelled "original" is not a facsimile of the printed book;
   scanning artefacts may remain.
-- Krsna Book is continuous prose, so its changes are grouped as one passage
-  per chapter.
-- Srimad-Bhagavatam changes are grouped by verse and section (Translation or
-  Purport); only lifetime-published text is covered.
+- Krsna Book, The Nectar of Devotion and Teachings of Lord Caitanya are
+  continuous prose, so their changes are grouped as one passage per chapter.
+- Srimad-Bhagavatam changes are grouped by verse and Īśopaniṣad by mantra, both
+  with Translation and Purport sections; only lifetime-published Srimad-Bhagavatam
+  text is covered.
 - The app highlights differences; it does not adjudicate them.
 
 ## Project layout
@@ -78,13 +91,16 @@ To rebuild only selected books:
 python tools/build_diff_data.py --books bg
 python tools/build_diff_data.py --books cc kb
 python tools/build_diff_data.py --books sb
+python tools/build_diff_data.py --books nod tlc iso
 ```
 
 The script downloads source pages to `tools/.cache/` on first run and then
 parses them into `assets/data/`. The Srimad-Bhagavatam build fetches the original
 verse files in parallel and reads the revised text from the VedaBase DOCX. Pass
 `--sb-docx PATH` if the DOCX is somewhere other than the default location.
-Later runs reuse the cache. To rebuild using only cached files:
+The three smaller books read local files only; pass `--original-dir DIR` and
+`--three-books-docx PATH` if they are not in their default locations. Later
+runs reuse the cache. To rebuild using only cached files:
 
 ```bash
 python tools/build_diff_data.py --offline
