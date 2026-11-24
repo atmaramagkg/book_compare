@@ -123,17 +123,30 @@ Run on a connected arm64 Android device:
 flutter run --target-platform android-arm64
 ```
 
-Build a release APK:
+Build the arm64 release APK:
 
 ```bash
 flutter build apk --release --target-platform android-arm64
+cp build/app/outputs/flutter-apk/app-release.apk \
+   build/app/outputs/flutter-apk/app-arm64-release.apk
 ```
 
-This build is arm64-only and requires Android 10 (API 29) or newer. The Gradle
-configuration also filters native libraries to `arm64-v8a`, so a plain
-`flutter build apk --release` produces the same single-ABI APK.
+Build the separate 32-bit ARM release APK:
 
-The APK is written to `build/app/outputs/flutter-apk/app-release.apk`.
+```bash
+flutter build apk --release --target-platform android-arm
+cp build/app/outputs/flutter-apk/app-release.apk \
+   build/app/outputs/flutter-apk/app-arm32-release.apk
+```
+
+The Gradle configuration selects `arm64-v8a` by default and switches to
+`armeabi-v7a` when Flutter passes `android-arm`. Both builds require Android 10
+(API 29) or newer and contain the same bundled data. They share the same package
+name, so installing one replaces the other on a device.
+
+The named APKs are written to `build/app/outputs/flutter-apk/`:
+`app-arm64-release.apk` and `app-arm32-release.apk`. Flutter's standard output
+`app-release.apk` is restored to the arm64 build after producing both.
 
 ## Highlight colors
 

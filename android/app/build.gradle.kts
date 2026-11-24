@@ -24,10 +24,20 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // Keep the release APK arm64-only. This avoids bundling 32-bit ARM and
-        // x86 native libraries for devices this build does not target.
+        // Keep the default release APK arm64-only. Flutter passes
+        // -Ptarget-platform=android-arm for the separate 32-bit build.
+        val requestedPlatform = (project.findProperty("target-platform") as String?)
+            ?.split(",")
+            ?.first()
+            ?.trim()
+            ?: "android-arm64"
+        val abi = when (requestedPlatform) {
+            "android-arm" -> "armeabi-v7a"
+            "android-arm64" -> "arm64-v8a"
+            else -> "arm64-v8a"
+        }
         ndk {
-            abiFilters += listOf("arm64-v8a")
+            abiFilters += listOf(abi)
         }
     }
 
