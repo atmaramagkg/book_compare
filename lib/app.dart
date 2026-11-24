@@ -27,9 +27,15 @@ class BookEditApp extends StatelessWidget {
         cardTheme: CardThemeData(
           elevation: 1,
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       ),
+      // Android 15+ can draw edge to edge. Keep every route above the system
+      // navigation bar (including the 3-button bar) while AppBar handles top inset.
+      builder: (context, child) =>
+          SafeArea(top: false, child: child ?? const SizedBox.shrink()),
       home: const BooksScreen(),
     );
   }
