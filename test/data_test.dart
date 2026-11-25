@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:book_compare/models/diff_models.dart';
 import 'package:book_compare/services/diff_repository.dart';
 
 void main() {
@@ -22,25 +21,30 @@ void main() {
     }
   });
 
-  test('local prose books align chapters rather than replacing whole chapters',
-      () async {
+  test('local prose books show paragraph-level differences', () async {
     for (final id in ['nod', 'tlc']) {
       final data = await DiffRepository.instance.loadBook(id);
-      expect(data.hunkCount, data.chapterCount);
+      expect(data.hunkCount, greaterThan(data.chapterCount * 20));
+      if (id == 'tlc') {
+        expect(data.hunkCount, greaterThanOrEqualTo(1100));
+      }
+
+      final hunks = data.chapters.expand((c) => c.allHunks).toList();
+      expect(
+        hunks.where((h) => h.original.isNotEmpty && h.revised.isNotEmpty).length,
+        greaterThan(800),
+      );
+      expect(
+        hunks.where((h) => h.original.isEmpty || h.revised.isEmpty).length,
+        greaterThan(0),
+      );
 
       for (final chapter in data.chapters) {
-        for (final hunk in chapter.allHunks) {
-          expect(
-            hunk.original.any((segment) => segment.kind == SegmentKind.same),
-            isTrue,
-            reason: '$id ${chapter.numberLabel} has no unchanged original text',
-          );
-          expect(
-            hunk.revised.any((segment) => segment.kind == SegmentKind.same),
-            isTrue,
-            reason: '$id ${chapter.numberLabel} has no unchanged revised text',
-          );
-        }
+        expect(
+          chapter.allHunks.length,
+          greaterThan(1),
+          reason: '$id ${chapter.numberLabel} still has a whole-chapter hunk',
+        );
       }
     }
   });

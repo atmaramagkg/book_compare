@@ -284,11 +284,11 @@ BOOKS: dict[str, BookConfig] = {
         source_note=(
             "The original side is the offline Vedabase Original edition. The "
             "revised side is exported from the supplied Bhaktivedanta VedaBase "
-            "2025 DOCX. Nectar of Devotion is continuous prose, so changes are "
-            "grouped as one passage per chapter, including chapter headings. "
-            "Passages are matched by content when chapter boundaries differ. "
-            "The original text is not a facsimile of the printed book and may "
-            "contain scanning artefacts."
+            "2025 DOCX. Nectar of Devotion is continuous prose, so each changed "
+            "paragraph, insertion, deletion or chapter heading is shown as its "
+            "own difference. Paragraphs are matched by content when chapter "
+            "boundaries differ. The original text is not a facsimile of the "
+            "printed book and may contain scanning artefacts."
         ),
         section_labels=(),
         default_section="Passage",
@@ -314,11 +314,11 @@ BOOKS: dict[str, BookConfig] = {
         source_note=(
             "The original side is the offline Vedabase Original edition. The "
             "revised side is exported from the supplied Bhaktivedanta VedaBase "
-            "2025 DOCX. Teachings of Lord Caitanya is continuous prose, so "
-            "changes are grouped as one passage per chapter, including chapter "
-            "headings. Passages are matched by content when chapter boundaries "
-            "differ. The original text is not a facsimile of the printed book "
-            "and may contain scanning artefacts."
+            "2025 DOCX. Teachings of Lord Caitanya is continuous prose, so each "
+            "changed paragraph, insertion, deletion or chapter heading is shown "
+            "as its own difference. Paragraphs are matched by content when "
+            "chapter boundaries differ. The original text is not a facsimile of "
+            "the printed book and may contain scanning artefacts."
         ),
         section_labels=(),
         default_section="Passage",
@@ -735,11 +735,12 @@ def load_three_books_docx(path: Path) -> dict[str, dict[str, dict[str, list[str]
 
 def align_prose_paragraphs(
     original: dict[str, dict], revised: dict[str, dict], book_id: str
-) -> dict[str, list[str]]:
+) -> dict[str, list[dict]]:
     """Match prose paragraphs by content when chapter boundaries shift.
 
-    Returns revised paragraphs grouped by original chapter key. The revised
-    chapter title is prepended when the DOCX marker supplies one.
+    Returns one diff hunk per changed paragraph, deletion, insertion or chapter
+    heading, grouped by original chapter key. This keeps a shifted chapter
+    boundary from turning into one whole-chapter replacement.
     """
     word_re = re.compile(r"[a-zāīūṛṝḷḹēōṁṃḥśṣṭḍñṅṇ]+")
     original_items: list[tuple[str, str, set[str]]] = []
@@ -809,45 +810,97 @@ def align_prose_paragraphs(
             j -= 1
     pairs.reverse()
 
-    matched: dict[int, str] = {}
+    original_by_revised: dict[int, int] = {}
+    revised_by_original: dict[int, int] = {}
     votes: Counter[tuple[str, str]] = Counter()
     for original_index, revised_index in pairs:
-        original_key = original_items[original_index][0]
-        revised_key = revised_items[revised_index][0]
-        matched[revised_index] = original_key
-        votes[(original_key, revised_key)] += 1
+        original_by_revised[revised_index] = original_index
+        revised_by_original[original_index] = revised_index
+        votes[(original_items[original_index][0], revised_items[revised_index][0])] += 1
 
-    chosen: dict[str, tuple[int, str]] = {}
-    for (original_key, revised_key), count in votes.items():
-        best = chosen.get(original_key)
-        if best is None or count > best[0] or (
-            count == best[0] and revised_key < best[1]
-        ):
-            chosen[original_key] = (count, revised_key)
-
-    last_key: str | None = None
+    assignments: dict[int, int] = dict(original_by_revised)
+    last_index: int | None = None
     for revised_index in range(count_revised):
-        if revised_index in matched:
-            last_key = matched[revised_index]
-        elif last_key is None:
-            last_key = revised_items[revised_index][0]
-        matched[revised_index] = last_key
-
-    grouped: dict[str, list[tuple[int, str]]] = {key: [] for key in original}
-    for revised_index, original_key in matched.items():
-        if original_key in grouped:
-            grouped[original_key].append(
-                (revised_index, revised_items[revised_index][1])
+        if revised_index in original_by_revised:
+            last_index = original_by_revised[revised_index]
+            continue
+        if last_index is None:
+            following = next(
+                (
+                    index
+                    for index in range(revised_index + 1, count_revised)
+                    if index in original_by_revised
+                ),
+                None,
             )
+            if following is not None:
+                last_index = original_by_revised[following]
+            else:
+                own_key = revised_items[revised_index][0]
+                last_index = next(
+                    (
+                        index
+                        for index, item in enumerate(original_items)
+                        if item[0] == own_key
+                    ),
+                    0,
+                )
+        assignments[revised_index] = last_index
+        votes[(original_items[last_index][0], revised_items[revised_index][0])] += 1
 
-    result: dict[str, list[str]] = {}
-    for key in original:
-        entries = sorted(grouped[key])
-        paragraphs = [text for _, text in entries]
-        revised_key = chosen.get(key, (0, key))[1]
-        title = revised.get(revised_key, {}).get("TITLE", "")
-        result[key] = ([title] if title else []) + paragraphs
-    return result
+    chosen: dict[str, str] = {}
+    for (original_key, revised_key), count in votes.items():
+        current = chosen.get(original_key)
+        if current is None or count > votes[(original_key, current)] or (
+            count == votes[(original_key, current)] and revised_key < current
+        ):
+            chosen[original_key] = revised_key
+
+    # (original paragraph index, insertion slot) keeps hunks in reading order.
+    grouped: dict[str, list[tuple[tuple[int, int], dict]]] = {key: [] for key in original}
+
+    def add_hunks(key: str, order: tuple[int, int], hunks: list[dict]) -> None:
+        for hunk in hunks:
+            grouped[key].append((order, hunk))
+
+    for key, sections in original.items():
+        original_title = sections.get("title", "")
+        revised_key = chosen.get(key, key)
+        revised_title = revised.get(revised_key, {}).get("TITLE", "") or original_title
+        add_hunks(key, (-1, 0), diff_passages([original_title], [revised_title]))
+
+    for original_index, (key, paragraph, _) in enumerate(original_items):
+        revised_index = revised_by_original.get(original_index)
+        if revised_index is None:
+            hunks = diff_passages([paragraph], [])
+        else:
+            hunks = diff_passages([paragraph], [revised_items[revised_index][1]])
+        add_hunks(key, (original_index, 0), hunks)
+
+    for revised_index in range(count_revised):
+        if revised_index in original_by_revised:
+            continue
+        original_index = assignments[revised_index]
+        key = original_items[original_index][0]
+        same_chapter = [
+            matched_index
+            for original_index, matched_index in revised_by_original.items()
+            if original_items[original_index][0] == key
+        ]
+        earlier = max((index for index in same_chapter if index < revised_index), default=None)
+        later = min((index for index in same_chapter if index > revised_index), default=None)
+        if earlier is not None:
+            order = (original_by_revised[earlier], 1)
+        elif later is not None:
+            order = (original_by_revised[later], -1)
+        else:
+            order = (original_index, 1)
+        add_hunks(key, order, diff_passages([], [revised_items[revised_index][1]]))
+
+    return {
+        key: [hunk for _, hunk in sorted(grouped[key], key=lambda item: item[0])]
+        for key in original
+    }
 
 
 def load_local_original(book_id: str) -> dict[str, dict]:
@@ -920,9 +973,7 @@ def build_local_dataset(book_id: str, offline: bool) -> tuple[dict, dict]:
                     })
                 sections.append(section)
         else:
-            left = [p for p in original_sections["TRANSLATION"] if p]
-            right = aligned.get(key, [])
-            hunks = diff_passages(left, right)
+            hunks = aligned.get(key, [])
             if hunks:
                 section = {"reference": config.default_reference, "hunks": []}
                 for hunk in hunks:

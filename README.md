@@ -13,9 +13,13 @@ the source texts without commentary or editorializing.
 | Sri Caitanya-caritamrta | 1975 original ↔ Vedabase 2003 revised | 63 | 15,671 |
 | Krsna: The Supreme Personality of Godhead | 1970 original ↔ Vedabase 2013 revised | 89 | 2,947 |
 | Srimad-Bhagavatam | Original lifetime editions ↔ VedaBase 2025 revised | 214 | 6,954 |
-| The Nectar of Devotion | Vedabase Original ↔ VedaBase 2025 revised | 53 | 53 |
-| Teachings of Lord Caitanya | Vedabase Original ↔ VedaBase 2025 revised | 36 | 36 |
+| The Nectar of Devotion | Vedabase Original ↔ VedaBase 2025 revised | 53 | 1,242 |
+| Teachings of Lord Caitanya | Vedabase Original ↔ VedaBase 2025 revised | 36 | 1,149 |
 | Śrī Īśopaniṣad | Vedabase Original ↔ VedaBase 2025 revised | 15 | 16 |
+
+The published claim of "over 1,108 changes" for Teachings of Lord Caitanya has
+no accompanying diff report, so the bundled dataset counts each changed
+paragraph, insertion, deletion and heading in the two local editions.
 
 The app opens to a book picker. Each book has its own chapter list, section
 list, edition labels, and source notes. Runtime is fully offline after
@@ -43,19 +47,20 @@ lifetime edition was printed for the remaining Canto 10 chapters or for Cantos
 The Nectar of Devotion, Teachings of Lord Caitanya and Śrī Īśopaniṣad datasets
 use the offline Vedabase Original JSONP files for the original side and the
 supplied three-book Bhaktivedanta VedaBase 2025 DOCX for the revised side. The
-legacy VedaBase font encoding in the DOCX is converted to Unicode. The two
-prose books are grouped as one passage per chapter and are matched by content
-where chapter boundaries differ between editions. Īśopaniṣad is grouped by
-mantra and section (Translation or Purport); mantras without differences are
-omitted.
+legacy VedaBase font encoding in the DOCX is converted to Unicode. In the two
+prose books, each changed paragraph, insertion, deletion or chapter heading is
+shown separately, and paragraphs are matched by content where chapter
+boundaries differ between editions. Īśopaniṣad is grouped by mantra and section
+(Translation or Purport); mantras without differences are omitted.
 
 Important limitations, also shown in the app's About screen:
 
 - The source reports do not compare word-for-word synonyms.
 - The text labelled "original" is not a facsimile of the printed book;
   scanning artefacts may remain.
-- Krsna Book, The Nectar of Devotion and Teachings of Lord Caitanya are
-  continuous prose, so their changes are grouped as one passage per chapter.
+- Krsna Book is continuous prose, so its ExamDiff changes are grouped as one
+  passage per chapter. In The Nectar of Devotion and Teachings of Lord Caitanya,
+  each changed paragraph is shown separately.
 - Srimad-Bhagavatam changes are grouped by verse and Īśopaniṣad by mantra, both
   with Translation and Purport sections; only lifetime-published Srimad-Bhagavatam
   text is covered.
