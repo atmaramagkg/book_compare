@@ -78,6 +78,7 @@ Important limitations, also shown in the app's About screen:
 - `assets/data/books.json` — book manifest
 - `assets/data/*_diffs.json` — per-book diff datasets
 - `tools/build_diff_data.py` — downloads and parses the source reports
+- `windows/` — Windows desktop runner
 - `test/` — data and widget tests
 
 ## Regenerating the datasets
@@ -152,6 +153,25 @@ name, so installing one replaces the other on a device.
 The named APKs are written to `build/app/outputs/flutter-apk/`:
 `app-arm64-release.apk` and `app-arm32-release.apk`. Flutter's standard output
 `app-release.apk` is restored to the arm64 build after producing both.
+
+## Windows portable app
+
+Windows desktop support is enabled in this project. To build it:
+
+```bash
+flutter build windows --release
+```
+
+Extract
+`build/windows/x64/runner/Book-edit-windows-x64-portable.zip` anywhere and run
+`Book edit.exe`. Keep `Book edit.exe`, `flutter_windows.dll` and the `data\`
+folder together; the app is fully offline and needs no installation. It has the
+same bundled books and differences as the Android builds.
+
+To recreate the portable zip after a rebuild, copy the contents of
+`build/windows/x64/runner/Release\` to a staging folder, rename `book_compare.exe`
+to `Book edit.exe`, and zip the folder contents. Build outputs are ignored by
+Git, so the zip is local only.
 
 ## Highlight colors
 
